@@ -1,5 +1,5 @@
 # Databricks notebook source
-# MAGIC %pip install iso3166 Faker
+# MAGIC %pip install iso3166 Faker #installs lib to generate fake data
 
 # COMMAND ----------
 
@@ -21,6 +21,7 @@
 
 # DBTITLE 1,Run First for Widgets
 import random
+# we are simulating streaming data directly arriving to pipeline
 # point to your catalog here
 catalog = "demos"
 
@@ -43,8 +44,8 @@ dbutils.widgets.text("catalog/schema", catalog+"/"+schema)
 dbutils.widgets.text('user_id', user_id)
 dbutils.widgets.dropdown('reset_all_data', 'false', ['true', 'false'], 'reset data?')
 dbutils.widgets.dropdown('batch_wait', '30', ['15', '30', '45', '60'], 'sec delay')
-dbutils.widgets.dropdown('num_recs', '500', ['500','1000','5000'], '#recs/write')
-dbutils.widgets.combobox('batch_count', '300', ['0', '3','100', '300', '500'], '#writes')
+dbutils.widgets.dropdown('num_recs', '500', ['500','1000','5000'], '#recs/write') # 500 records per batch
+dbutils.widgets.combobox('batch_count', '300', ['0', '3','100', '300', '500'], '#writes') #300 batches
 
 display(user_id)
 
@@ -171,3 +172,7 @@ for i in range(0, int(dbutils.widgets.get('batch_count'))):
     time.sleep(int(dbutils.widgets.get('batch_wait')))
   generate_transactions(int(dbutils.widgets.get('num_recs')), output_path+'/raw_transactions', 1, "append")
   print(f'finished writing batch: {i}')
+
+# COMMAND ----------
+
+

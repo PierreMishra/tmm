@@ -35,9 +35,9 @@
 -- MAGIC
 -- MAGIC Our datasets are coming from 3 different systems and saved under a cloud storage folder (S3/ADLS/GCS): 
 -- MAGIC
--- MAGIC * `/demos/dlt/loans/USER_ID/raw_transactions` (loans - streaming data)
--- MAGIC * `/demos/dlt/loans/USER_ID/ref_accounting_treatment` (reference table, mostly static)
--- MAGIC * `/demos/dlt/loans/USER_ID/historical_loans` (loan from legacy system, new data added every week)
+-- MAGIC * `/demos/dlt/loans/user_1172590/raw_transactions` (loans - streaming data)
+-- MAGIC * `/demos/dlt/loans/user_1172590/ref_accounting_treatment` (reference table, mostly static)
+-- MAGIC * `/demos/dlt/loans/user_1172590/historical_loans` (loan from legacy system, new data added every week)
 -- MAGIC
 -- MAGIC Let's ingest this data incrementally, and then compute a couple of aggregates that we'll need for our final Dashboard to report our KPI.
 
@@ -50,9 +50,9 @@
 -- MAGIC make sure to update the ingestion location for Auto Loaderin the three SQL statement below: 
 -- MAGIC
 -- MAGIC
--- MAGIC 1. replace `/demos/dlt/loans/USER_ID/raw_transactions` using your USER_ID from the LabGuide notebook, e.g  `user_412602` (your value will be different!). Make sure to use to right user_id.
--- MAGIC 2. same for `/demos/dlt/loans/USER_ID/ref_accounting_treatment`, again user your vulue for USER_ID 
--- MAGIC 3. same for `/demos/dlt/loans/USER_ID/historical_loans`, again user your value for USER_ID  
+-- MAGIC 1. replace `/demos/dlt/loans/user_1172590/raw_transactions` using your USER_ID from the LabGuide notebook, e.g  `user_412602` (your value will be different!). Make sure to use to right user_id.
+-- MAGIC 2. same for `/demos/dlt/loans/user_1172590/ref_accounting_treatment`, again user your vulue for USER_ID 
+-- MAGIC 3. same for `/demos/dlt/loans/user_1172590/historical_loans`, again user your value for USER_ID  
 
 -- COMMAND ----------
 
@@ -76,30 +76,30 @@
 -- COMMAND ----------
 
 -- DBTITLE 1,Let's review the incoming data
--- MAGIC %fs ls /demos/dlt/loans/USER_ID/raw_transactions
+-- MAGIC %fs ls /demos/dlt/loans/user_1172590/raw_transactions
 
 -- COMMAND ----------
 
 -- DBTITLE 1,Capture new incoming transactions
-CREATE STREAMING TABLE raw_txs
+CREATE STREAMING TABLE raw_txs ---assigining "STREAMING" is important to create a "Streaming" table; it is following structured streaming principle; it will never overwrite (you can manually set it but it wont by default)
   COMMENT "New raw loan data incrementally ingested from cloud object storage landing zone"
-AS SELECT * FROM cloud_files('/demos/dlt/loans/USER_ID/raw_transactions', 'json', map("cloudFiles.inferColumnTypes", "true"))
+AS SELECT * FROM cloud_files('/demos/dlt/loans/user_1172590/raw_transactions', 'json', map("cloudFiles.inferColumnTypes", "true"))
 
 -- COMMAND ----------
 
 -- DBTITLE 1,Reference table - metadata (small & almost static)
-CREATE MATERIALIZED VIEW ref_accounting_treatment
+CREATE MATERIALIZED VIEW ref_accounting_treatment ---materialized view is completely recomputed (unless you are on databricks serverless because it has a tech called enzyme that just computes the incremental data)
   COMMENT "Lookup mapping for accounting codes"
-AS SELECT * FROM delta.`/demos/dlt/loans/USER_ID/ref_accounting_treatment`
+AS SELECT * FROM delta.`/demos/dlt/loans/user_1172590/ref_accounting_treatment`
 
 -- COMMAND ----------
 
 -- DBTITLE 1,Historical transaction from legacy system
 -- as this is only refreshed at a weekly basis, we can lower the interval
 CREATE STREAMING TABLE raw_historical_loans
-  TBLPROPERTIES ("pipelines.trigger.interval"="6 hour")
+  TBLPROPERTIES ("pipelines.trigger.interval"="6 hour") ---because this will only come on weekly basis, we can increase interval, by default this is half a second
   COMMENT "Raw historical transactions"
-AS SELECT * FROM cloud_files('/demos/dlt/loans/USER_ID/historical_loans', 'csv', map("cloudFiles.inferColumnTypes", "true"))
+AS SELECT * FROM cloud_files('/demos/dlt/loans/user_1172590/historical_loans', 'csv', map("cloudFiles.inferColumnTypes", "true"))
 
 -- COMMAND ----------
 
@@ -123,7 +123,7 @@ AS SELECT * FROM cloud_files('/demos/dlt/loans/USER_ID/historical_loans', 'csv',
 -- DBTITLE 1,enrich transactions with metadata
 CREATE STREAMING LIVE VIEW new_txs 
   COMMENT "Livestream of new transactions"
-AS SELECT txs.*, ref.accounting_treatment as accounting_treatment FROM stream(LIVE.raw_txs) txs
+AS SELECT txs.*, ref.accounting_treatment as accounting_treatment FROM stream(LIVE.raw_txs) txs ---only want to read the incremental changes, thats what "stream" does
   INNER JOIN live.ref_accounting_treatment ref ON txs.accounting_treatment_id = ref.id
 
 -- COMMAND ----------
@@ -142,7 +142,7 @@ AS SELECT * from STREAM(live.new_txs)
 -- DBTITLE 1,Let's quarantine the bad transaction for further analysis
 -- This is the inverse condition of the above statement to quarantine incorrect data for further analysis.
 CREATE STREAMING TABLE quarantine_bad_txs (
-  CONSTRAINT `Payments should be this year`  EXPECT (next_payment_date <= date('2020-12-31')),
+  CONSTRAINT `Payments should be this year`  EXPECT (next_payment_date <= date('2020-12-31')), ---just opposite conditions than previous cell because we want to capture (quarantine) the bad values
   CONSTRAINT `Balance should be positive`    EXPECT (balance <= 0 OR arrears_balance <= 0) ON VIOLATION DROP ROW
 )
   COMMENT "Incorrect transactions requiring human analysis"
